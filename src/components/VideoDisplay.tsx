@@ -82,7 +82,7 @@ const VideoDisplay: React.FC<VideoDisplayProps> = ({
 
       {/* Show placeholder when no stream or camera is off */}
       {!showVideo && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-700">
+        <div className="placeholder">
           <UserRound size={64} className="text-slate-400 mb-2" />
           <p className="text-sm text-slate-300">{getStatusMessage()}</p>
         </div>

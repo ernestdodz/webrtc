@@ -6,21 +6,37 @@ interface ConnectionStatusProps {
 }
 
 const ConnectionStatus: React.FC<ConnectionStatusProps> = ({ state }) => {
+  // Determine if the status indicator should pulse
+  const shouldPulse = [
+    "connecting",
+    "waiting",
+    "finding",
+    "initializing",
+  ].includes(state);
+
+  // Get the appropriate color for the status indicator
   const getStatusColor = () => {
     switch (state) {
       case "connected":
         return "bg-green-500";
       case "connecting":
-        return "bg-yellow-500 pulse";
+        return "bg-yellow-500";
+      case "waiting":
+        return "bg-blue-500";
+      case "finding":
+        return "bg-blue-500";
       case "disconnected":
         return "bg-slate-500";
       case "failed":
         return "bg-red-500";
+      case "permission-denied":
+        return "bg-red-500";
       default:
-        return "bg-blue-500 pulse";
+        return "bg-blue-500";
     }
   };
 
+  // Get the appropriate text for the status
   const getStatusText = () => {
     switch (state) {
       case "connected":
@@ -35,6 +51,8 @@ const ConnectionStatus: React.FC<ConnectionStatusProps> = ({ state }) => {
         return "Finding someone...";
       case "waiting":
         return "Waiting for someone to join...";
+      case "permission-denied":
+        return "Camera access denied";
       default:
         return "Initializing...";
     }
@@ -42,7 +60,11 @@ const ConnectionStatus: React.FC<ConnectionStatusProps> = ({ state }) => {
 
   return (
     <div className="flex items-center justify-center mb-4 slide-in">
-      <div className={`w-3 h-3 rounded-full ${getStatusColor()} mr-2`}></div>
+      <div
+        className={`w-3 h-3 rounded-full ${getStatusColor()} mr-2 ${
+          shouldPulse ? "animate-pulse" : ""
+        }`}
+      ></div>
       <span className="text-sm font-medium">{getStatusText()}</span>
     </div>
   );
