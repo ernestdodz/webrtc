@@ -48,13 +48,19 @@ const VideoChatApp: React.FC<VideoChatAppProps> = ({
 
   useEffect(() => {
     // Initialize connection on component mount
-    connectToRoom(roomId, username, isRoomCreator);
+    // Pass reuseExisting: true to enable same-device testing
+    connectToRoom(roomId, username, isRoomCreator, { reuseExisting: true });
 
     // Cleanup on unmount
     return () => {
       disconnectPeer();
+
+      // If this is the last instance, clear the stream ID from localStorage
+      if (isRoomCreator) {
+        localStorage.removeItem("webrtc-test-stream-id");
+      }
     };
-  }, [roomId, username, isRoomCreator]);
+  }, [roomId, username, isRoomCreator, connectToRoom, disconnectPeer]);
 
   // Handle toggling video
   const handleToggleVideo = () => {

@@ -57,31 +57,77 @@ export const useWebRTC = () => {
   }, [disconnectSignaling]);
 
   // Initialize local media stream
-  const initLocalStream = useCallback(async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: true,
-      });
-      setLocalStream(stream);
-      setConnectionState("initializing");
-      return stream;
-    } catch (error: any) {
-      console.error("Error accessing media devices:", error);
+  const initLocalStream = useCallback(
+    async (options?: { reuseExisting?: boolean }) => {
+      // Check if we should try to reuse an existing stream (for same-device testing)
+      if (options?.reuseExisting) {
+        // Try to get existing stream from localStorage (for same-device testing)
+        try {
+          // Check if there's a stream ID stored in localStorage
+          const existingStreamId = localStorage.getItem(
+            "webrtc-test-stream-id"
+          );
 
-      // Handle permission denial specifically
-      if (
-        error.name === "NotAllowedError" ||
-        error.message.includes("Permission dismissed")
-      ) {
-        setConnectionState("permission-denied");
-      } else {
-        setConnectionState("failed");
+          if (existingStreamId) {
+            console.log(
+              "Using existing stream ID for testing:",
+              existingStreamId
+            );
+
+            // Get the actual stream using getUserMedia
+            const stream = await navigator.mediaDevices.getUserMedia({
+              video: true,
+              audio: true,
+            });
+
+            // Store the stream ID in localStorage for other tabs to use
+            if (!existingStreamId) {
+              localStorage.setItem("webrtc-test-stream-id", "stream-exists");
+            }
+
+            setLocalStream(stream);
+            setConnectionState("initializing");
+            return stream;
+          }
+        } catch (err) {
+          console.warn(
+            "Failed to reuse existing stream, falling back to new stream",
+            err
+          );
+        }
       }
 
-      return null;
-    }
-  }, []);
+      // Normal path - get a new stream
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: true,
+        });
+
+        // Store the stream ID in localStorage for other tabs to use
+        localStorage.setItem("webrtc-test-stream-id", "stream-exists");
+
+        setLocalStream(stream);
+        setConnectionState("initializing");
+        return stream;
+      } catch (error: any) {
+        console.error("Error accessing media devices:", error);
+
+        // Handle permission denial specifically
+        if (
+          error.name === "NotAllowedError" ||
+          error.message.includes("Permission dismissed")
+        ) {
+          setConnectionState("permission-denied");
+        } else {
+          setConnectionState("failed");
+        }
+
+        return null;
+      }
+    },
+    []
+  );
 
   // Retry getting media permissions
   const retryMediaAccess = useCallback(async () => {
@@ -115,12 +161,18 @@ export const useWebRTC = () => {
           console.log("Data channel opened");
           // Send username when data channel opens
           if (localUsername.current) {
-            dc.send(
-              JSON.stringify({
-                type: "username",
-                username: localUsername.current,
-              })
-            );
+            // Add a small delay to ensure the channel is fully ready
+            setTimeout(() => {
+              if (dc.readyState === "open") {
+                dc.send(
+                  JSON.stringify({
+                    type: "username",
+                    username: localUsername.current,
+                  })
+                );
+                console.log("Sent username:", localUsername.current);
+              }
+            }, 500);
           }
         };
         dc.onclose = () => console.log("Data channel closed");
@@ -183,10 +235,13 @@ export const useWebRTC = () => {
         // Handle remote data channel
         pc.ondatachannel = (event) => {
           dataChannel.current = event.channel;
+          console.log("Remote data channel received");
 
           event.channel.onmessage = (e) => {
             try {
               const data = JSON.parse(e.data);
+              console.log("Received data channel message:", data.type);
+
               if (data.type === "chat") {
                 setChatMessages((prev) => [
                   ...prev,
@@ -196,6 +251,9 @@ export const useWebRTC = () => {
                     timestamp: new Date(),
                   },
                 ]);
+              } else if (data.type === "username") {
+                console.log("Received remote username:", data.username);
+                setRemoteUsername(data.username);
               }
             } catch (error) {
               console.error("Error parsing data channel message:", error);
@@ -330,7 +388,12 @@ export const useWebRTC = () => {
 
   // Connect to a specific room
   const connectToRoom = useCallback(
-    async (roomId: string, username: string, isRoomCreator: boolean) => {
+    async (
+      roomId: string,
+      username: string,
+      isRoomCreator: boolean,
+      options?: { reuseExisting?: boolean }
+    ) => {
       // Store username for sharing
       localUsername.current = username;
 
@@ -342,10 +405,16 @@ export const useWebRTC = () => {
       setConnectionState(isRoomCreator ? "waiting" : "connecting");
       setChatMessages([]);
 
+      // Check if we're testing on the same device
+      const isSameDeviceTest =
+        options?.reuseExisting ||
+        (localStorage.getItem("webrtc-test-stream-id") && !isRoomCreator);
+
       // Initialize local stream if needed
       let stream = localStream;
       if (!stream) {
-        stream = await initLocalStream();
+        // If we're the second tab in a same-device test, try to reuse the stream
+        stream = await initLocalStream({ reuseExisting: isSameDeviceTest });
         if (!stream) return;
       }
 
@@ -355,6 +424,13 @@ export const useWebRTC = () => {
 
       // Connect to signaling server with room ID
       connectSignaling(roomId, isRoomCreator);
+
+      // Log for debugging
+      console.log(
+        `Connected to room ${roomId} as ${
+          isRoomCreator ? "creator" : "joiner"
+        }, same-device test: ${isSameDeviceTest}`
+      );
     },
     [
       connectSignaling,

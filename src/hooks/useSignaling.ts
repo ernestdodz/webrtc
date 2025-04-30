@@ -137,13 +137,20 @@ export const useSignaling = () => {
 
       if (event.key === joinKey && isCreator.current) {
         // Room creator receives join notification
+        console.log("Room creator received join notification");
         if (signalCallback.current) {
-          signalCallback.current({ type: "matched" });
+          // Add a small delay to ensure both sides are ready (helps with same-device testing)
+          setTimeout(() => {
+            if (signalCallback.current) {
+              signalCallback.current({ type: "matched" });
+            }
+          }, 500);
         }
       } else if (event.key === relevantKey) {
         // Process signal from the other peer
         try {
           const signal = JSON.parse(event.newValue);
+          console.log("Received signal:", signal.type);
           if (signalCallback.current) {
             signalCallback.current(signal);
           }

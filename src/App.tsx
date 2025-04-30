@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import VideoChatApp from "./components/VideoChatApp";
 import HomeScreen from "./components/HomeScreen"; // Correct casing
 import "./App.css";
-import React from "react";
 
 function App() {
   const [currentScreen, setCurrentScreen] = useState<"home" | "chat">("home");
