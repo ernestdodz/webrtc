@@ -1,36 +1,60 @@
-import React, { useState, useEffect } from 'react';
-import { Video, VideoOff, Mic, MicOff, MessageSquare, X, RefreshCw } from 'lucide-react';
-import VideoDisplay from './VideoDisplay';
-import ChatPanel from './ChatPanel';
-import ConnectionStatus from './ConnectionStatus';
-import { useWebRTC } from '../hooks/useWebRTC';
+import React, { useState, useEffect } from "react";
+import {
+  Video,
+  VideoOff,
+  Mic,
+  MicOff,
+  MessageSquare,
+  X,
+  ArrowLeft,
+  Copy,
+  Check,
+} from "lucide-react";
+import VideoDisplay from "./VideoDisplay";
+import ChatPanel from "./ChatPanel";
+import ConnectionStatus from "./ConnectionStatus";
+import { useWebRTC } from "../hooks/useWebRTC";
 
-const VideoChatApp: React.FC = () => {
+interface VideoChatAppProps {
+  roomId: string;
+  username: string;
+  onBackToHome: () => void;
+  isRoomCreator: boolean;
+}
+
+const VideoChatApp: React.FC<VideoChatAppProps> = ({
+  roomId,
+  username,
+  onBackToHome,
+  isRoomCreator,
+}) => {
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isVideoEnabled, setIsVideoEnabled] = useState(true);
   const [isAudioEnabled, setIsAudioEnabled] = useState(true);
-  
-  const { 
-    localStream, 
-    remoteStream, 
-    connectionState, 
-    connectToRandomPeer, 
+  const [isCopied, setIsCopied] = useState(false);
+
+  const {
+    localStream,
+    remoteStream,
+    connectionState,
+    connectToRoom,
     disconnectPeer,
     toggleVideo,
     toggleAudio,
     sendChatMessage,
-    chatMessages
+    chatMessages,
+    remoteUsername,
   } = useWebRTC();
 
   useEffect(() => {
     // Initialize connection on component mount
-    connectToRandomPeer();
-    
+    connectToRoom(roomId, username, isRoomCreator);
+
     // Cleanup on unmount
     return () => {
       disconnectPeer();
     };
-  }, []);
+  }, [roomId, username, isRoomCreator]);
 
   // Handle toggling video
   const handleToggleVideo = () => {
@@ -44,70 +68,113 @@ const VideoChatApp: React.FC = () => {
     setIsAudioEnabled(!isAudioEnabled);
   };
 
-  // Handle skipping to next user
-  const handleSkip = () => {
-    disconnectPeer();
-    connectToRandomPeer();
+  // Copy room ID to clipboard
+  const copyRoomId = () => {
+    navigator.clipboard.writeText(roomId);
+    setIsCopied(true);
+    setTimeout(() => setIsCopied(false), 2000);
   };
 
   return (
     <div className="container mx-auto px-4 py-8 max-w-6xl">
-      <header className="mb-8 text-center">
-        <h1 className="text-4xl font-bold text-teal-400 mb-2">ConnectNow</h1>
-        <p className="text-slate-300 max-w-lg mx-auto">
-          Meet new people through random video chats. Click 'Next' to connect with someone new.
-        </p>
+      <header className="mb-6 flex flex-col items-center">
+        <div className="w-full flex justify-between items-center mb-4">
+          <button
+            onClick={onBackToHome}
+            className="flex items-center text-slate-300 hover:text-teal-400 transition-colors"
+          >
+            <ArrowLeft size={20} className="mr-1" />
+            <span>Back</span>
+          </button>
+          <h1 className="text-3xl font-bold text-teal-400">ConnectNow</h1>
+          <div className="w-20"></div> {/* Spacer for centering */}
+        </div>
+
+        <div className="bg-slate-800 rounded-lg p-3 mb-4 flex items-center justify-between w-full max-w-md">
+          <div>
+            <div className="text-sm text-slate-400">Room ID:</div>
+            <div className="font-mono font-medium">{roomId}</div>
+          </div>
+          <button
+            onClick={copyRoomId}
+            className="p-2 bg-slate-700 hover:bg-slate-600 rounded-md transition-colors"
+            title="Copy room ID"
+          >
+            {isCopied ? (
+              <Check size={18} className="text-green-400" />
+            ) : (
+              <Copy size={18} />
+            )}
+          </button>
+        </div>
       </header>
-      
+
       <main className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-4 fade-in">
           <div className="relative">
             <ConnectionStatus state={connectionState} />
-            
+
             {/* Main video display area */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* Local video */}
-              <VideoDisplay 
-                stream={localStream} 
-                isMuted={true} 
-                isLocal={true} 
-                isVideoEnabled={isVideoEnabled}
-              />
-              
+              <div className="relative">
+                <VideoDisplay
+                  stream={localStream}
+                  isMuted={true}
+                  isLocal={true}
+                  isVideoEnabled={isVideoEnabled}
+                />
+                <div className="absolute bottom-3 left-0 right-0 text-center">
+                  <span className="bg-black/50 px-3 py-1 rounded-full text-sm">
+                    {username} (You)
+                  </span>
+                </div>
+              </div>
+
               {/* Remote video */}
-              <VideoDisplay 
-                stream={remoteStream} 
-                isMuted={false} 
-                isLocal={false} 
-                isVideoEnabled={true}
-              />
+              <div className="relative">
+                <VideoDisplay
+                  stream={remoteStream}
+                  isMuted={false}
+                  isLocal={false}
+                  isVideoEnabled={true}
+                />
+                {remoteStream && remoteUsername && (
+                  <div className="absolute bottom-3 left-0 right-0 text-center">
+                    <span className="bg-black/50 px-3 py-1 rounded-full text-sm">
+                      {remoteUsername}
+                    </span>
+                  </div>
+                )}
+              </div>
             </div>
-            
+
             {/* Controls */}
             <div className="flex justify-center mt-6 space-x-4">
-              <button 
-                onClick={handleToggleVideo} 
-                className={`action-button p-3 rounded-full ${isVideoEnabled ? 'bg-teal-600 hover:bg-teal-700' : 'bg-red-600 hover:bg-red-700'}`}
+              <button
+                onClick={handleToggleVideo}
+                className={`action-button p-3 rounded-full ${
+                  isVideoEnabled
+                    ? "bg-teal-600 hover:bg-teal-700"
+                    : "bg-red-600 hover:bg-red-700"
+                }`}
               >
                 {isVideoEnabled ? <Video size={24} /> : <VideoOff size={24} />}
               </button>
-              
-              <button 
-                onClick={handleToggleAudio} 
-                className={`action-button p-3 rounded-full ${isAudioEnabled ? 'bg-teal-600 hover:bg-teal-700' : 'bg-red-600 hover:bg-red-700'}`}
+
+              <button
+                onClick={handleToggleAudio}
+                className={`action-button p-3 rounded-full ${
+                  isAudioEnabled
+                    ? "bg-teal-600 hover:bg-teal-700"
+                    : "bg-red-600 hover:bg-red-700"
+                }`}
               >
                 {isAudioEnabled ? <Mic size={24} /> : <MicOff size={24} />}
               </button>
-              
-              <button 
-                onClick={handleSkip} 
-                className="action-button p-3 bg-blue-600 hover:bg-blue-700 rounded-full"
-              >
-                <RefreshCw size={24} />
-              </button>
-              
-              <button 
-                onClick={() => setIsChatOpen(!isChatOpen)} 
+
+              <button
+                onClick={() => setIsChatOpen(!isChatOpen)}
                 className="action-button p-3 bg-slate-700 hover:bg-slate-600 rounded-full"
               >
                 <MessageSquare size={24} />
@@ -117,7 +184,13 @@ const VideoChatApp: React.FC = () => {
         </div>
 
         {/* Chat panel */}
-        <div className={`bg-slate-800 rounded-lg p-4 transition-all duration-300 ${isChatOpen ? 'opacity-100' : 'opacity-0 lg:opacity-100 hidden lg:block'}`}>
+        <div
+          className={`bg-slate-800 rounded-lg p-4 transition-all duration-300 ${
+            isChatOpen
+              ? "opacity-100"
+              : "opacity-0 lg:opacity-100 hidden lg:block"
+          }`}
+        >
           {isChatOpen && (
             <div className="flex justify-between items-center mb-4 md:hidden">
               <h3 className="text-lg font-semibold">Chat</h3>
@@ -129,9 +202,12 @@ const VideoChatApp: React.FC = () => {
           <ChatPanel messages={chatMessages} onSendMessage={sendChatMessage} />
         </div>
       </main>
-      
+
       <footer className="mt-8 text-center text-slate-400 text-sm">
-        <p>© {new Date().getFullYear()} ConnectNow. Enjoy safe and respectful conversations.</p>
+        <p>
+          © {new Date().getFullYear()} ConnectNow. Enjoy safe and respectful
+          conversations.
+        </p>
       </footer>
     </div>
   );

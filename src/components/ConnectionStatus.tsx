@@ -1,5 +1,5 @@
-import React from 'react';
-import { ConnectionState } from '../types/webrtc';
+import React from "react";
+import { ConnectionState } from "../types/webrtc";
 
 interface ConnectionStatusProps {
   state: ConnectionState;
@@ -8,33 +8,35 @@ interface ConnectionStatusProps {
 const ConnectionStatus: React.FC<ConnectionStatusProps> = ({ state }) => {
   const getStatusColor = () => {
     switch (state) {
-      case 'connected':
-        return 'bg-green-500';
-      case 'connecting':
-        return 'bg-yellow-500 pulse';
-      case 'disconnected':
-        return 'bg-slate-500';
-      case 'failed':
-        return 'bg-red-500';
+      case "connected":
+        return "bg-green-500";
+      case "connecting":
+        return "bg-yellow-500 pulse";
+      case "disconnected":
+        return "bg-slate-500";
+      case "failed":
+        return "bg-red-500";
       default:
-        return 'bg-blue-500 pulse';
+        return "bg-blue-500 pulse";
     }
   };
 
   const getStatusText = () => {
     switch (state) {
-      case 'connected':
-        return 'Connected';
-      case 'connecting':
-        return 'Connecting...';
-      case 'disconnected':
-        return 'Disconnected';
-      case 'failed':
-        return 'Connection failed';
-      case 'finding':
-        return 'Finding someone...';
+      case "connected":
+        return "Connected";
+      case "connecting":
+        return "Connecting...";
+      case "disconnected":
+        return "Disconnected";
+      case "failed":
+        return "Connection failed";
+      case "finding":
+        return "Finding someone...";
+      case "waiting":
+        return "Waiting for someone to join...";
       default:
-        return 'Initializing...';
+        return "Initializing...";
     }
   };
 
