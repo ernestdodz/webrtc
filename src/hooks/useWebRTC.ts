@@ -70,20 +70,22 @@ export const useWebRTC = () => {
 
           if (existingStreamId) {
             console.log(
-              "Using existing stream ID for testing:",
-              existingStreamId
+              "Same-device testing: Using existing stream ID for testing"
             );
 
-            // Get the actual stream using getUserMedia
+            // Get the actual stream using getUserMedia with exact same constraints
+            // to ensure we get the same camera device
             const stream = await navigator.mediaDevices.getUserMedia({
               video: true,
               audio: true,
             });
 
+            console.log(
+              "Successfully acquired camera stream for same-device testing"
+            );
+
             // Store the stream ID in localStorage for other tabs to use
-            if (!existingStreamId) {
-              localStorage.setItem("webrtc-test-stream-id", "stream-exists");
-            }
+            localStorage.setItem("webrtc-test-stream-id", "stream-exists");
 
             setLocalStream(stream);
             setConnectionState("initializing");
@@ -99,13 +101,24 @@ export const useWebRTC = () => {
 
       // Normal path - get a new stream
       try {
+        console.log("Requesting new media stream");
         const stream = await navigator.mediaDevices.getUserMedia({
           video: true,
           audio: true,
         });
 
+        console.log("Successfully acquired new camera stream");
+
         // Store the stream ID in localStorage for other tabs to use
+        // This helps the joiner tab know that it's a same-device test
         localStorage.setItem("webrtc-test-stream-id", "stream-exists");
+
+        // Log the tracks we got
+        stream.getTracks().forEach((track) => {
+          console.log(
+            `Got track: ${track.kind}, enabled: ${track.enabled}, id: ${track.id}`
+          );
+        });
 
         setLocalStream(stream);
         setConnectionState("initializing");
@@ -229,7 +242,31 @@ export const useWebRTC = () => {
 
         // Handle remote tracks
         pc.ontrack = (event) => {
-          setRemoteStream(new MediaStream(event.streams[0].getTracks()));
+          console.log(
+            "Remote track received:",
+            event.track.kind,
+            event.track.id
+          );
+
+          // Create a new MediaStream with all tracks from the remote stream
+          const newRemoteStream = new MediaStream();
+          event.streams[0].getTracks().forEach((track) => {
+            console.log(
+              `Adding remote track to stream: ${track.kind}, id: ${track.id}`
+            );
+            newRemoteStream.addTrack(track);
+          });
+
+          // Set the remote stream state
+          setRemoteStream(newRemoteStream);
+
+          // Always update connection state to connected when we receive tracks
+          // This ensures the UI shows connected state even if the connection state
+          // hasn't updated yet
+          console.log(
+            "Setting connection state to connected on track received"
+          );
+          setConnectionState("connected");
         };
 
         // Handle remote data channel
@@ -295,12 +332,19 @@ export const useWebRTC = () => {
       if (!peerConnection.current) return;
 
       try {
+        console.log("Received offer, setting remote description");
         await peerConnection.current.setRemoteDescription(
           new RTCSessionDescription(offer)
         );
+
+        // Update connection state to reflect progress
+        setConnectionState("connecting");
+
+        console.log("Creating answer");
         const answer = await peerConnection.current.createAnswer();
         await peerConnection.current.setLocalDescription(answer);
 
+        console.log("Sending answer to peer");
         sendSignal({
           type: "answer",
           answer,
@@ -310,6 +354,7 @@ export const useWebRTC = () => {
         processPendingCandidates();
       } catch (error) {
         console.error("Error handling offer:", error);
+        setConnectionState("failed");
       }
     },
     [sendSignal, processPendingCandidates]
@@ -321,13 +366,22 @@ export const useWebRTC = () => {
       if (!peerConnection.current) return;
 
       try {
+        console.log("Received answer, setting remote description");
         await peerConnection.current.setRemoteDescription(
           new RTCSessionDescription(answer)
         );
+
+        // Update connection state to reflect progress
+        setConnectionState("connecting");
+        console.log(
+          "Connection state updated to connecting after receiving answer"
+        );
+
         // Process any pending ICE candidates after setting remote description
         processPendingCandidates();
       } catch (error) {
         console.error("Error handling answer:", error);
+        setConnectionState("failed");
       }
     },
     [processPendingCandidates]
@@ -377,7 +431,10 @@ export const useWebRTC = () => {
     if (!pc) return;
 
     // Connect to signaling server and wait for match
-    connectSignaling();
+    // Using a random room ID for random peer connection
+    const randomRoomId = Math.random().toString(36).substring(2, 8);
+    connectSignaling(randomRoomId, true); // Connect as creator
+    console.log(`Connected to random room: ${randomRoomId}`);
   }, [
     connectSignaling,
     disconnectPeer,
@@ -402,35 +459,70 @@ export const useWebRTC = () => {
         disconnectPeer();
       }
 
+      // Set initial connection state based on role
       setConnectionState(isRoomCreator ? "waiting" : "connecting");
       setChatMessages([]);
 
       // Check if we're testing on the same device
-      const isSameDeviceTest =
+      // Either explicitly requested via options or detected via localStorage
+      const isSameDeviceTest = Boolean(
         options?.reuseExisting ||
-        (localStorage.getItem("webrtc-test-stream-id") && !isRoomCreator);
+          (localStorage.getItem("webrtc-test-stream-id") && !isRoomCreator)
+      );
+
+      console.log("Same device test detected:", isSameDeviceTest);
 
       // Initialize local stream if needed
       let stream = localStream;
       if (!stream) {
+        console.log("No local stream, initializing...");
         // If we're the second tab in a same-device test, try to reuse the stream
         stream = await initLocalStream({ reuseExisting: isSameDeviceTest });
-        if (!stream) return;
+        if (!stream) {
+          console.error("Failed to initialize local stream");
+          return;
+        }
       }
 
       // Initialize new peer connection
       const pc = initPeerConnection(stream);
-      if (!pc) return;
+      if (!pc) {
+        console.error("Failed to initialize peer connection");
+        return;
+      }
 
-      // Connect to signaling server with room ID
-      connectSignaling(roomId, isRoomCreator);
-
-      // Log for debugging
       console.log(
-        `Connected to room ${roomId} as ${
+        `Connecting to room ${roomId} as ${
           isRoomCreator ? "creator" : "joiner"
-        }, same-device test: ${isSameDeviceTest}`
+        }`
       );
+
+      // For same-device testing, add a small delay before connecting to signaling
+      // This helps ensure both tabs are ready before attempting to connect
+      if (isSameDeviceTest && !isRoomCreator) {
+        console.log(
+          "Adding delay for same-device joiner before connecting to signaling"
+        );
+
+        // Shorter delay for better user experience
+        setTimeout(() => {
+          // Connect to signaling server with room ID
+          connectSignaling(roomId, isRoomCreator);
+
+          console.log(
+            `Connected to room ${roomId} as joiner, same-device test: ${isSameDeviceTest}`
+          );
+        }, 500);
+      } else {
+        // Connect to signaling server with room ID
+        connectSignaling(roomId, isRoomCreator);
+
+        console.log(
+          `Connected to room ${roomId} as ${
+            isRoomCreator ? "creator" : "joiner"
+          }, same-device test: ${isSameDeviceTest}`
+        );
+      }
     },
     [
       connectSignaling,
@@ -481,34 +573,57 @@ export const useWebRTC = () => {
     }
   }, []);
 
+  // Define signal types for better type safety
+  type Signal =
+    | { type: "offer"; offer: RTCSessionDescriptionInit; timestamp?: number }
+    | { type: "answer"; answer: RTCSessionDescriptionInit; timestamp?: number }
+    | {
+        type: "ice-candidate";
+        candidate: RTCIceCandidateInit;
+        timestamp?: number;
+      }
+    | { type: "matched"; timestamp?: number }
+    | { type: "disconnect"; timestamp?: number }
+    | { type: "join-room"; timestamp?: number };
+
   // Handle received signals
   useEffect(() => {
-    const handleSignal = (signal: any) => {
+    const handleSignal = (signal: Signal) => {
+      console.log("Processing signal:", signal.type);
+
       switch (signal.type) {
         case "offer":
+          console.log("Received offer signal, handling...");
           handleOffer(signal.offer);
           break;
         case "answer":
+          console.log("Received answer signal, handling...");
           handleAnswer(signal.answer);
           break;
         case "ice-candidate":
+          console.log("Received ICE candidate signal, handling...");
           handleIceCandidate(signal.candidate);
           break;
         case "matched":
+          console.log("Received matched signal, creating offer...");
+          // When matched, the creator creates an offer to initiate the connection
           createOffer();
           break;
         case "disconnect":
+          console.log("Received disconnect signal, disconnecting peer...");
           disconnectPeer();
           break;
         default:
+          console.log("Received unknown signal type:", (signal as any).type);
           break;
       }
     };
 
-    onSignalReceived(handleSignal);
+    // Set up signal handler
+    onSignalReceived(handleSignal as any); // Type cast needed due to any in useSignaling
 
     return () => {
-      // Cleanup
+      // Cleanup - nothing needed here as useSignaling handles its own cleanup
     };
   }, [
     createOffer,

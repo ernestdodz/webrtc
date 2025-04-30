@@ -49,14 +49,47 @@ const VideoChatApp: React.FC<VideoChatAppProps> = ({
   useEffect(() => {
     // Initialize connection on component mount
     // Pass reuseExisting: true to enable same-device testing
-    connectToRoom(roomId, username, isRoomCreator, { reuseExisting: true });
+    console.log(
+      `Initializing WebRTC connection for room ${roomId} as ${
+        isRoomCreator ? "creator" : "joiner"
+      }`
+    );
+
+    // Function to connect to the room
+    const initializeConnection = () => {
+      console.log(
+        `Connecting to room ${roomId} as ${
+          isRoomCreator ? "creator" : "joiner"
+        }`
+      );
+      connectToRoom(roomId, username, isRoomCreator, { reuseExisting: true });
+    };
+
+    // Clear any previous connection state
+    if (isRoomCreator) {
+      console.log("Room creator: setting up new room");
+      // Creator connects immediately
+      initializeConnection();
+    } else {
+      console.log("Room joiner: connecting to existing room");
+      // Small delay for joiner to ensure creator is ready
+      // This is especially important for same-device testing
+      const timer = setTimeout(() => {
+        initializeConnection();
+      }, 500);
+
+      // Clean up timer if component unmounts before timeout completes
+      return () => clearTimeout(timer);
+    }
 
     // Cleanup on unmount
     return () => {
+      console.log(`Cleaning up WebRTC connection for room ${roomId}`);
       disconnectPeer();
 
       // If this is the last instance, clear the stream ID from localStorage
       if (isRoomCreator) {
+        console.log("Room creator: removing stream ID from localStorage");
         localStorage.removeItem("webrtc-test-stream-id");
       }
     };

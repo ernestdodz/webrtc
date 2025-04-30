@@ -21,6 +21,12 @@ export const useSignaling = () => {
       }`
     );
 
+    // For same-device testing, clear any previous signals for this room
+    if (isRoomCreator) {
+      // Clear any existing join signals
+      localStorage.removeItem(`${SIGNAL_STORAGE_PREFIX}${roomIdParam}-join`);
+    }
+
     // If joining a room, send a join signal to notify the creator
     if (!isRoomCreator) {
       // Small delay to ensure the creator has set up listeners
@@ -30,10 +36,13 @@ export const useSignaling = () => {
           timestamp: Date.now(),
         };
 
+        // Store the join signal in localStorage
         localStorage.setItem(
           `${SIGNAL_STORAGE_PREFIX}${roomIdParam}-join`,
           JSON.stringify(joinSignal)
         );
+
+        console.log("Joiner sent join signal to creator");
 
         // Trigger storage event for other tabs
         window.dispatchEvent(
@@ -42,7 +51,22 @@ export const useSignaling = () => {
             newValue: JSON.stringify(joinSignal),
           })
         );
-      }, 500);
+
+        // For same-device testing, send the join signal again after a short delay
+        // This helps ensure the creator tab receives it
+        setTimeout(() => {
+          window.dispatchEvent(
+            new StorageEvent("storage", {
+              key: `${SIGNAL_STORAGE_PREFIX}${roomIdParam}-join`,
+              newValue: JSON.stringify({
+                ...joinSignal,
+                timestamp: Date.now(),
+              }),
+            })
+          );
+          console.log("Joiner sent second join signal to creator");
+        }, 1000);
+      }, 1000);
     }
   }, []);
 
@@ -139,19 +163,36 @@ export const useSignaling = () => {
         // Room creator receives join notification
         console.log("Room creator received join notification");
         if (signalCallback.current) {
-          // Add a small delay to ensure both sides are ready (helps with same-device testing)
+          // Reduced delay to ensure faster connection
           setTimeout(() => {
             if (signalCallback.current) {
               signalCallback.current({ type: "matched" });
+              console.log("Sent 'matched' signal to initiate connection");
+
+              // Send another matched signal after a short delay to ensure it's received
+              setTimeout(() => {
+                if (signalCallback.current) {
+                  signalCallback.current({ type: "matched" });
+                  console.log(
+                    "Sent second 'matched' signal to ensure connection"
+                  );
+                }
+              }, 500);
             }
-          }, 500);
+          }, 300); // Reduced delay for faster connection
         }
       } else if (event.key === relevantKey) {
         // Process signal from the other peer
         try {
           const signal = JSON.parse(event.newValue);
-          console.log("Received signal:", signal.type);
+          console.log(
+            "Received signal:",
+            signal.type,
+            "from",
+            isCreator.current ? "joiner" : "creator"
+          );
           if (signalCallback.current) {
+            // Process the signal immediately
             signalCallback.current(signal);
           }
         } catch (error) {
@@ -163,9 +204,7 @@ export const useSignaling = () => {
     // Add event listener
     window.addEventListener("storage", handleStorageChange);
 
-    // Also listen for manually dispatched events (for same-tab testing)
-    window.addEventListener("storage", handleStorageChange);
-
+    // Clean up event listener on unmount
     return () => {
       window.removeEventListener("storage", handleStorageChange);
     };
