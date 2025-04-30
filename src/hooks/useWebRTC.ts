@@ -172,6 +172,15 @@ export const useWebRTC = () => {
         // Handle data channel events
         dc.onopen = () => {
           console.log("Data channel opened");
+
+          // Update connection state to connected when data channel opens
+          // This helps ensure the UI shows connected state even if the connection state
+          // hasn't updated yet
+          console.log(
+            "Setting connection state to connected on data channel open"
+          );
+          setConnectionState("connected");
+
           // Send username when data channel opens
           if (localUsername.current) {
             // Add a small delay to ensure the channel is fully ready
@@ -188,7 +197,13 @@ export const useWebRTC = () => {
             }, 500);
           }
         };
-        dc.onclose = () => console.log("Data channel closed");
+        dc.onclose = () => {
+          console.log("Data channel closed");
+          // If the connection state is still connected, update it
+          if (connectionState === "connected") {
+            setConnectionState("disconnected");
+          }
+        };
         dc.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data);
@@ -274,7 +289,50 @@ export const useWebRTC = () => {
           dataChannel.current = event.channel;
           console.log("Remote data channel received");
 
-          event.channel.onmessage = (e) => {
+          // Set up event handlers for the remote data channel
+          const channel = event.channel;
+
+          // Handle data channel open
+          channel.onopen = () => {
+            console.log("Remote data channel opened");
+
+            // Update connection state to connected when data channel opens
+            console.log(
+              "Setting connection state to connected on remote data channel open"
+            );
+            setConnectionState("connected");
+
+            // Send username when data channel opens
+            if (localUsername.current) {
+              // Add a small delay to ensure the channel is fully ready
+              setTimeout(() => {
+                if (channel.readyState === "open") {
+                  channel.send(
+                    JSON.stringify({
+                      type: "username",
+                      username: localUsername.current,
+                    })
+                  );
+                  console.log(
+                    "Sent username via remote channel:",
+                    localUsername.current
+                  );
+                }
+              }, 500);
+            }
+          };
+
+          // Handle data channel close
+          channel.onclose = () => {
+            console.log("Remote data channel closed");
+            // If the connection state is still connected, update it
+            if (connectionState === "connected") {
+              setConnectionState("disconnected");
+            }
+          };
+
+          // Handle data channel messages
+          channel.onmessage = (e) => {
             try {
               const data = JSON.parse(e.data);
               console.log("Received data channel message:", data.type);
@@ -337,8 +395,18 @@ export const useWebRTC = () => {
           new RTCSessionDescription(offer)
         );
 
-        // Update connection state to reflect progress
-        setConnectionState("connecting");
+        // Only update connection state to connecting if we're not already connected
+        // This prevents going back to "connecting" state after already being "connected"
+        if (connectionState !== "connected") {
+          setConnectionState("connecting");
+          console.log(
+            "Connection state updated to connecting after receiving offer"
+          );
+        } else {
+          console.log(
+            "Already connected, not changing state after receiving offer"
+          );
+        }
 
         console.log("Creating answer");
         const answer = await peerConnection.current.createAnswer();
@@ -357,7 +425,7 @@ export const useWebRTC = () => {
         setConnectionState("failed");
       }
     },
-    [sendSignal, processPendingCandidates]
+    [sendSignal, processPendingCandidates, connectionState]
   );
 
   // Handle received answer
@@ -371,11 +439,18 @@ export const useWebRTC = () => {
           new RTCSessionDescription(answer)
         );
 
-        // Update connection state to reflect progress
-        setConnectionState("connecting");
-        console.log(
-          "Connection state updated to connecting after receiving answer"
-        );
+        // Only update connection state to connecting if we're not already connected
+        // This prevents going back to "connecting" state after already being "connected"
+        if (connectionState !== "connected") {
+          setConnectionState("connecting");
+          console.log(
+            "Connection state updated to connecting after receiving answer"
+          );
+        } else {
+          console.log(
+            "Already connected, not changing state after receiving answer"
+          );
+        }
 
         // Process any pending ICE candidates after setting remote description
         processPendingCandidates();
@@ -384,7 +459,7 @@ export const useWebRTC = () => {
         setConnectionState("failed");
       }
     },
-    [processPendingCandidates]
+    [processPendingCandidates, connectionState]
   );
 
   // Handle received ICE candidate
@@ -584,7 +659,8 @@ export const useWebRTC = () => {
       }
     | { type: "matched"; timestamp?: number }
     | { type: "disconnect"; timestamp?: number }
-    | { type: "join-room"; timestamp?: number };
+    | { type: "join-room"; timestamp?: number }
+    | { type: string; [key: string]: unknown }; // For unknown signal types
 
   // Handle received signals
   useEffect(() => {
@@ -620,7 +696,7 @@ export const useWebRTC = () => {
     };
 
     // Set up signal handler
-    onSignalReceived(handleSignal as any); // Type cast needed due to any in useSignaling
+    onSignalReceived(handleSignal as any);
 
     return () => {
       // Cleanup - nothing needed here as useSignaling handles its own cleanup
